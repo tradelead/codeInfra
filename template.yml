@@ -1,0 +1,335 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Mappings:
+  NatRegionMap:
+    ap-northeast-1:
+      AMI: ami-06cd52961ce9f0d85
+    ap-northeast-2:
+      AMI: ami-0a10b2721688ce9d2
+    ap-south-1:
+      AMI: ami-0912f71e06545ad88
+    ap-southeast-1:
+      AMI: ami-08569b978cc4dfa10
+    ap-southeast-2:
+      AMI: ami-09b42976632b27e9b
+    ca-central-1:
+      AMI: ami-0b18956f
+    cn-north-1:
+      AMI: ami-0a4eaf6c4454eda75
+    eu-central-1:
+      AMI: ami-0233214e13e500f77
+    eu-west-1:
+      AMI: ami-047bb4163c506cd98
+    eu-west-2:
+      AMI: ami-f976839e
+    eu-west-3:
+      AMI: ami-0ebc281c20e89ba4b
+    sa-east-1:
+      AMI: aami-07b14488da8ea02a0
+    us-east-1:
+      AMI: ami-0ff8a91507f77f867
+    us-east-2:
+      AMI: ami-0b59bfac6be064b78
+    us-west-1:
+      AMI: ami-a0cfeed8
+    us-west-2:
+      AMI: ami-0bdb828fd58c52235
+Outputs:
+  MySQLAddress:
+    Export:
+      Name: !Sub '${AWS::StackName}-MySQL-Address'
+    Value: !GetAtt 'RDSMySQL.Endpoint.Address'
+  MySQLPort:
+    Export:
+      Name: !Sub '${AWS::StackName}-MySQL-Port'
+    Value: !GetAtt 'RDSMySQL.Endpoint.Port'
+  NewFilledOrderTopic:
+    Export:
+      Name: !Sub '${AWS::StackName}-NewFilledOrderTopicArn'
+    Value: !Ref 'NewFilledOrderTopic'
+  NewSuccessfulDepositTopic:
+    Export:
+      Name: !Sub '${AWS::StackName}-NewSuccessfulDepositTopicArn'
+    Value: !Ref 'NewSuccessfulDepositTopic'
+  NewSuccessfulWithdrawalTopic:
+    Export:
+      Name: !Sub '${AWS::StackName}-NewSuccessfulWithdrawalTopicArn'
+    Value: !Ref 'NewSuccessfulWithdrawalTopic'
+  NewTraderExchangeTopic:
+    Export:
+      Name: !Sub '${AWS::StackName}-NewTraderExchangeTopicArn'
+    Value: !Ref 'NewTraderExchangeTopic'
+  RDSAccessSG:
+    Export:
+      Name: !Sub '${AWS::StackName}-RDS-Access-SG-ID'
+    Value: !GetAtt 'RDSAccessSecurityGroup.GroupId'
+  RedisAccessSG:
+    Export:
+      Name: !Sub '${AWS::StackName}-Redis-Access-SG-ID'
+    Value: !GetAtt 'RedisAccessSecurityGroup.GroupId'
+  RedisAddress:
+    Export:
+      Name: !Sub '${AWS::StackName}-Redis-Address'
+    Value: !GetAtt 'Redis.RedisEndpoint.Address'
+  RedisPort:
+    Export:
+      Name: !Sub '${AWS::StackName}-Redis-Port'
+    Value: !GetAtt 'Redis.RedisEndpoint.Port'
+  RemoveTraderExchangeTopic:
+    Export:
+      Name: !Sub '${AWS::StackName}-RemoveTraderExchangeTopicArn'
+    Value: !Ref 'RemoveTraderExchangeTopic'
+  Subnet:
+    Export:
+      Name: !Sub '${AWS::StackName}-SubnetID'
+    Value: !Ref 'SubnetPrivate'
+Parameters:
+  KeyPair:
+    Type: String
+  NATInstClass:
+    Type: String
+  NATSSHCidrAllow:
+    Type: String
+  RDSInstClass:
+    Type: String
+  RDSMasterPass:
+    Type: String
+  RDSMasterUser:
+    Type: String
+  RDSStorage:
+    Type: String
+  RedisInstClass:
+    Type: String
+  RedisInstNum:
+    Type: Number
+Resources:
+  GatewayToInternet:
+    DependsOn:
+      - VPC
+      - InternetGateway
+    Properties:
+      InternetGatewayId: !Ref 'InternetGateway'
+      VpcId: !Ref 'VPC'
+    Type: AWS::EC2::VPCGatewayAttachment
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  NAT:
+    DependsOn:
+      - SubnetPublic
+      - NatSecurityGroup
+    Properties:
+      ImageId: !FindInMap
+        - NatRegionMap
+        - !Ref 'AWS::Region'
+        - AMI
+      InstanceType: !Ref 'NATInstClass'
+      KeyName: !Ref 'KeyPair'
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: 'true'
+          DeleteOnTermination: 'true'
+          DeviceIndex: 0
+          GroupSet:
+            - !GetAtt 'NatSecurityGroup.GroupId'
+            - !GetAtt 'RDSAccessSecurityGroup.GroupId'
+          SubnetId: !Ref 'SubnetPublic'
+      SourceDestCheck: 'false'
+      UserData: !Base64
+        Fn::Join:
+          - ''
+          - - "#!/bin/bash\n"
+            - yum update -y && yum install -y yum-cron && chkconfig yum-cron on
+    Type: AWS::EC2::Instance
+  NatSecurityGroup:
+    DependsOn: VPC
+    Properties:
+      GroupDescription: NAT Security Group
+      SecurityGroupIngress:
+        - CidrIp: 172.31.16.0/20
+          FromPort: 80
+          IpProtocol: tcp
+          ToPort: 80
+        - CidrIp: 172.31.16.0/20
+          FromPort: 443
+          IpProtocol: tcp
+          ToPort: 443
+        - CidrIp: !Ref 'NATSSHCidrAllow'
+          FromPort: 22
+          IpProtocol: tcp
+          ToPort: 22
+      VpcId: !Ref 'VPC'
+    Type: AWS::EC2::SecurityGroup
+  NewFilledOrderTopic:
+    Type: AWS::SNS::Topic
+  NewSuccessfulDepositTopic:
+    Type: AWS::SNS::Topic
+  NewSuccessfulWithdrawalTopic:
+    Type: AWS::SNS::Topic
+  NewTraderExchangeTopic:
+    Type: AWS::SNS::Topic
+  PrivateRoute:
+    DependsOn:
+      - PrivateRouteTable
+      - NAT
+    Properties:
+      DestinationCidrBlock: '0.0.0.0/0'
+      InstanceId: !Ref 'NAT'
+      RouteTableId: !Ref 'PrivateRouteTable'
+    Type: AWS::EC2::Route
+  PrivateRouteTable:
+    DependsOn:
+      - VPC
+    Properties:
+      VpcId: !Ref 'VPC'
+    Type: AWS::EC2::RouteTable
+  PrivateRouteTableB:
+    DependsOn:
+      - VPC
+    Properties:
+      VpcId: !Ref 'VPC'
+    Type: AWS::EC2::RouteTable
+  PrivateSubnetRouteTableAssociation:
+    DependsOn:
+      - SubnetPrivate
+      - PrivateRouteTable
+    Properties:
+      RouteTableId: !Ref 'PrivateRouteTable'
+      SubnetId: !Ref 'SubnetPrivate'
+    Type: AWS::EC2::SubnetRouteTableAssociation
+  PrivateSubnetRouteTableAssociationB:
+    DependsOn:
+      - SubnetPrivateB
+      - PrivateRouteTableB
+    Properties:
+      RouteTableId: !Ref 'PrivateRouteTableB'
+      SubnetId: !Ref 'SubnetPrivateB'
+    Type: AWS::EC2::SubnetRouteTableAssociation
+  PublicRoute:
+    DependsOn:
+      - PublicRouteTable
+      - InternetGateway
+    Properties:
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref 'InternetGateway'
+      RouteTableId: !Ref 'PublicRouteTable'
+    Type: AWS::EC2::Route
+  PublicRouteTable:
+    DependsOn:
+      - VPC
+    Properties:
+      VpcId: !Ref 'VPC'
+    Type: AWS::EC2::RouteTable
+  PublicSubnetRouteTableAssociation:
+    DependsOn:
+      - SubnetPublic
+      - PublicRouteTable
+    Properties:
+      RouteTableId: !Ref 'PublicRouteTable'
+      SubnetId: !Ref 'SubnetPublic'
+    Type: AWS::EC2::SubnetRouteTableAssociation
+  RDSAccessSecurityGroup:
+    Properties:
+      GroupDescription: RDS Access SG
+      VpcId: !Ref 'VPC'
+    Type: AWS::EC2::SecurityGroup
+  RDSMySQL:
+    Properties:
+      AllocatedStorage: !Ref 'RDSStorage'
+      AutoMinorVersionUpgrade: 'true'
+      AvailabilityZone: !Join
+        - ''
+        - - !Ref 'AWS::Region'
+          - a
+      DBInstanceClass: !Ref 'RDSInstClass'
+      DBSubnetGroupName: !Ref 'RDSMySQLSubnetGroup'
+      Engine: mysql
+      EngineVersion: '8.0'
+      MasterUserPassword: !Ref 'RDSMasterPass'
+      MasterUsername: !Ref 'RDSMasterUser'
+      PubliclyAccessible: 'false'
+      VPCSecurityGroups:
+        - !GetAtt 'RDSMySQLSecurityGroup.GroupId'
+    Type: AWS::RDS::DBInstance
+  RDSMySQLSecurityGroup:
+    Properties:
+      GroupDescription: MySQL Security Group
+      SecurityGroupIngress:
+        - FromPort: 3306
+          IpProtocol: tcp
+          SourceSecurityGroupId: !GetAtt 'RDSAccessSecurityGroup.GroupId'
+          ToPort: 3306
+      VpcId: !Ref 'VPC'
+    Type: AWS::EC2::SecurityGroup
+  RDSMySQLSubnetGroup:
+    Properties:
+      DBSubnetGroupDescription: MySQL Subnet Group
+      SubnetIds:
+        - !Ref 'SubnetPrivate'
+        - !Ref 'SubnetPrivateB'
+    Type: AWS::RDS::DBSubnetGroup
+  Redis:
+    Properties:
+      CacheNodeType: !Ref 'RedisInstClass'
+      CacheSubnetGroupName: !Ref 'RedisSubnetGroup'
+      Engine: redis
+      EngineVersion: 5.0.3
+      NumCacheNodes: !Ref 'RedisInstNum'
+      PreferredAvailabilityZone: !Join
+        - ''
+        - - !Ref 'AWS::Region'
+          - a
+      VpcSecurityGroupIds:
+        - !GetAtt 'RedisSecurityGroup.GroupId'
+    Type: AWS::ElastiCache::CacheCluster
+  RedisAccessSecurityGroup:
+    Properties:
+      GroupDescription: Redis Access SG
+      VpcId: !Ref 'VPC'
+    Type: AWS::EC2::SecurityGroup
+  RedisSecurityGroup:
+    Properties:
+      GroupDescription: Redis SG
+      SecurityGroupIngress:
+        - FromPort: 6379
+          IpProtocol: tcp
+          SourceSecurityGroupId: !GetAtt 'RedisAccessSecurityGroup.GroupId'
+          ToPort: 6379
+      VpcId: !Ref 'VPC'
+    Type: AWS::EC2::SecurityGroup
+  RedisSubnetGroup:
+    Properties:
+      Description: Redis Subnet Group
+      SubnetIds:
+        - !Ref 'SubnetPrivate'
+    Type: AWS::ElastiCache::SubnetGroup
+  RemoveTraderExchangeTopic:
+    Type: AWS::SNS::Topic
+  SubnetPrivate:
+    Properties:
+      AvailabilityZone: !Join
+        - ''
+        - - !Ref 'AWS::Region'
+          - a
+      CidrBlock: 172.31.16.0/20
+      VpcId: !Ref 'VPC'
+    Type: AWS::EC2::Subnet
+  SubnetPrivateB:
+    Properties:
+      AvailabilityZone: !Join
+        - ''
+        - - !Ref 'AWS::Region'
+          - b
+      CidrBlock: 172.31.32.0/20
+      VpcId: !Ref 'VPC'
+    Type: AWS::EC2::Subnet
+  SubnetPublic:
+    Properties:
+      AvailabilityZone: !Join
+        - ''
+        - - !Ref 'AWS::Region'
+          - a
+      CidrBlock: 172.31.0.0/20
+      VpcId: !Ref 'VPC'
+    Type: AWS::EC2::Subnet
+  VPC:
+    Properties:
+      CidrBlock: 172.31.0.0/16
+    Type: AWS::EC2::VPC
