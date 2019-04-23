@@ -168,7 +168,7 @@ mysql = t.add_resource(rds.DBInstance(
     AvailabilityZone = availZoneA,
 ))
 
-# Setup NAT Instane
+# Setup NAT Instance
 
 natSG = t.add_resource(ec2.SecurityGroup(
     'NatSecurityGroup',
@@ -180,13 +180,13 @@ natSG = t.add_resource(ec2.SecurityGroup(
             'IpProtocol': 'tcp',
             'FromPort': 80,
             'ToPort': 80,
-            'CidrIp': snCidr,
+            'CidrIp': '172.31.0.0/16',
         },
         {
             'IpProtocol': 'tcp',
             'FromPort': 443,
             'ToPort': 443,
-            'CidrIp': snCidr,
+            'CidrIp': '172.31.0.0/16',
         },
         {
             'IpProtocol': 'tcp',
@@ -211,7 +211,13 @@ nat = t.add_resource(ec2.Instance(
         DeleteOnTermination = 'true',
         SubnetId = snPub.Ref(),
     )],
-    UserData = Base64(Join("", ["#!/bin/bash\n", "yum update -y && yum install -y yum-cron && chkconfig yum-cron on"]))
+    UserData = Base64(Join("", [
+        "#!/bin/bash\n", 
+        "yum update -y && yum install -y yum-cron && chkconfig yum-cron on\n",
+        "echo 'net.ipv4.ip_forward=1' | sudo tee -a /etc/sysctl.conf\n",
+        "sudo iptables -t nat -A POSTROUTING -o eth0 -s 172.31.0.0/16 -j MASQUERADE\n",
+        "sudo /etc/init.d/iptables save"
+    ]))
 ))
 
 privRoute = t.add_resource(ec2.Route(
