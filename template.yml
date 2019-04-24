@@ -112,35 +112,85 @@ Resources:
     Type: AWS::EC2::VPCGatewayAttachment
   InternetGateway:
     Type: AWS::EC2::InternetGateway
-  NAT:
+  NATAutoScalingGroup:
     DependsOn:
       - SubnetPublic
       - NatSecurityGroup
     Properties:
+      LaunchConfigurationName: !Ref 'NATLaunchConfiguration'
+      MaxSize: 1
+      MinSize: 1
+      Tags:
+        - Key: purpose
+          PropagateAtLaunch: 'true'
+          Value: nat
+      VPCZoneIdentifier:
+        - !Ref 'SubnetPublic'
+    Type: AWS::AutoScaling::AutoScalingGroup
+  NATInstProfile:
+    Properties:
+      Roles:
+        - !Ref 'NATRole'
+    Type: AWS::IAM::InstanceProfile
+  NATLaunchConfiguration:
+    Properties:
+      AssociatePublicIpAddress: 'true'
+      EbsOptimized: 'false'
+      IamInstanceProfile: !Ref 'NATInstProfile'
       ImageId: !FindInMap
         - NatRegionMap
         - !Ref 'AWS::Region'
         - AMI
       InstanceType: !Ref 'NATInstClass'
       KeyName: !Ref 'KeyPair'
-      NetworkInterfaces:
-        - AssociatePublicIpAddress: 'true'
-          DeleteOnTermination: 'true'
-          DeviceIndex: 0
-          GroupSet:
-            - !GetAtt 'NatSecurityGroup.GroupId'
-            - !GetAtt 'RDSAccessSecurityGroup.GroupId'
-          SubnetId: !Ref 'SubnetPublic'
-      SourceDestCheck: 'false'
+      SecurityGroups:
+        - !GetAtt 'NatSecurityGroup.GroupId'
+        - !GetAtt 'RDSAccessSecurityGroup.GroupId'
       UserData: !Base64
-        Fn::Join:
-          - ''
-          - - "#!/bin/bash\n"
-            - "yum update -y && yum install -y yum-cron && chkconfig yum-cron on\n"
-            - "echo 'net.ipv4.ip_forward=1' | sudo tee -a /etc/sysctl.conf\n"
-            - "sudo iptables -t nat -A POSTROUTING -o eth0 -s 172.31.0.0/16 -j MASQUERADE\n"
-            - sudo /etc/init.d/iptables save
-    Type: AWS::EC2::Instance
+        Fn::Sub:
+          - "#!/bin/bash\n        yum update -y && yum install -y yum-cron && chkconfig\
+            \ yum-cron on\n        echo 'net.ipv4.ip_forward=1' | sudo tee -a /etc/sysctl.conf\n\
+            \        sudo sysctl -p\n        sudo iptables -t nat -A POSTROUTING -o\
+            \ eth0 -s ${VPCCidr} -j MASQUERADE\n        sudo /etc/init.d/iptables\
+            \ save\n        export AWS_DEFAULT_REGION='${AWS::Region}'\n        INSTANCEID=$(curl\
+            \ -s http://169.254.169.254/latest/meta-data/instance-id)\n        /usr/bin/aws\
+            \ ec2 modify-instance-attribute --instance-id $INSTANCEID --no-source-dest-check\n\
+            \        aws --region ${AWS::Region} ec2 replace-route --route-table-id\
+            \ ${RouteTablePrivate} --destination-cidr-block '0.0.0.0/0' --instance-id\
+            \ $INSTANCEID || aws --region ${AWS::Region} ec2 create-route --route-table-id\
+            \ ${RouteTablePrivate} --destination-cidr-block '0.0.0.0/0' --instance-id\
+            \ $INSTANCEID\n        "
+          - RouteTablePrivate: !Ref 'PrivateRouteTable'
+            VPCCidr: 172.31.0.0/16
+    Type: AWS::AutoScaling::LaunchConfiguration
+  NATRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+        Version: '2012-10-17'
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - ec2:ModifyInstanceAttribute
+                Effect: Allow
+                Resource: '*'
+              - Action:
+                  - ec2:CreateRoute
+                  - ec2:ReplaceRoute
+                Effect: Allow
+                Resource: !Sub
+                  - arn:aws:ec2:*:*:route-table/${RouteTable}
+                  - RouteTable: !Ref 'PrivateRouteTable'
+            Version: '2012-10-17'
+          PolicyName: ec2
+    Type: AWS::IAM::Role
   NatSecurityGroup:
     DependsOn: VPC
     Properties:
@@ -168,15 +218,6 @@ Resources:
     Type: AWS::SNS::Topic
   NewTraderExchangeTopic:
     Type: AWS::SNS::Topic
-  PrivateRoute:
-    DependsOn:
-      - PrivateRouteTable
-      - NAT
-    Properties:
-      DestinationCidrBlock: '0.0.0.0/0'
-      InstanceId: !Ref 'NAT'
-      RouteTableId: !Ref 'PrivateRouteTable'
-    Type: AWS::EC2::Route
   PrivateRouteTable:
     DependsOn:
       - VPC

@@ -1,6 +1,6 @@
 from troposphere import Tags, ImportValue, Parameter, Sub, GetAtt, Ref, Join, FindInMap, Base64, Output, Export
 from troposphere import Template, AWSObject
-from troposphere import ec2, rds, sns, elasticache
+from troposphere import ec2, rds, sns, elasticache, autoscaling, iam
 
 t = Template()
 t.add_version('2010-09-09')
@@ -41,6 +41,7 @@ rdsMasterPass = t.add_parameter(Parameter('RDSMasterPass', Type='String'))
 
 # Vars
 
+vpcCidr = '172.31.0.0/16'
 region = Ref("AWS::Region")
 availZoneA = Join("", [region, 'a'])
 availZoneB = Join("", [region, 'b'])
@@ -50,7 +51,7 @@ snCidrB = '172.31.32.0/20'
 
 # Setup VPC + Subnets + Internet Gateway +  NAT Instance (bc micro = free trial)
 
-vpc = t.add_resource(ec2.VPC('VPC', CidrBlock = '172.31.0.0/16'))
+vpc = t.add_resource(ec2.VPC('VPC', CidrBlock = vpcCidr))
 intGate = t.add_resource(ec2.InternetGateway('InternetGateway'))
 gateToInt = t.add_resource(ec2.VPCGatewayAttachment(
     'GatewayToInternet',
@@ -180,13 +181,13 @@ natSG = t.add_resource(ec2.SecurityGroup(
             'IpProtocol': 'tcp',
             'FromPort': 80,
             'ToPort': 80,
-            'CidrIp': '172.31.0.0/16',
+            'CidrIp': vpcCidr,
         },
         {
             'IpProtocol': 'tcp',
             'FromPort': 443,
             'ToPort': 443,
-            'CidrIp': '172.31.0.0/16',
+            'CidrIp': vpcCidr,
         },
         {
             'IpProtocol': 'tcp',
@@ -197,35 +198,77 @@ natSG = t.add_resource(ec2.SecurityGroup(
     ],
 ))
 
-nat = t.add_resource(ec2.Instance(
-    'NAT',
-    DependsOn = ["SubnetPublic", "NatSecurityGroup"],
-    InstanceType = natInstClass.Ref(),
-    SourceDestCheck = 'false',
-    KeyName = keyPair.Ref(),
-    ImageId = FindInMap('NatRegionMap', region, 'AMI'),
-    NetworkInterfaces = [ec2.NetworkInterfaceProperty(
-        GroupSet = [natSG.GetAtt('GroupId'), rdsAccessSG.GetAtt('GroupId')],
-        AssociatePublicIpAddress = 'true',
-        DeviceIndex = 0,
-        DeleteOnTermination = 'true',
-        SubnetId = snPub.Ref(),
+natIAMRole = t.add_resource(iam.Role(
+    'NATRole',
+    AssumeRolePolicyDocument = {
+        'Version': '2012-10-17',
+        'Statement': [{
+            'Effect': 'Allow',
+            'Principal': {
+                'Service': ['ec2.amazonaws.com']
+            },
+            'Action': ['sts:AssumeRole'],
+        }]
+    },
+    Policies = [iam.Policy(
+        PolicyName = 'ec2',
+        PolicyDocument = {
+            'Version': '2012-10-17',
+            'Statement': [{
+                'Effect': 'Allow',
+                'Action': ['ec2:ModifyInstanceAttribute'],
+                'Resource': '*',
+            },
+            {
+                'Effect': 'Allow',
+                'Action': ['ec2:CreateRoute', 'ec2:ReplaceRoute'],
+                'Resource': Sub('arn:aws:ec2:*:*:route-table/${RouteTable}', { 'RouteTable': routeTable.Ref() }),
+            }]
+        },
     )],
-    UserData = Base64(Join("", [
-        "#!/bin/bash\n", 
-        "yum update -y && yum install -y yum-cron && chkconfig yum-cron on\n",
-        "echo 'net.ipv4.ip_forward=1' | sudo tee -a /etc/sysctl.conf\n",
-        "sudo iptables -t nat -A POSTROUTING -o eth0 -s 172.31.0.0/16 -j MASQUERADE\n",
-        "sudo /etc/init.d/iptables save"
-    ]))
 ))
 
-privRoute = t.add_resource(ec2.Route(
-    'PrivateRoute',
-    DependsOn = ['PrivateRouteTable', 'NAT'],
-    RouteTableId = routeTable.Ref(),
-    InstanceId = nat.Ref(),
-    DestinationCidrBlock = '0.0.0.0/0',
+natInstProfile = t.add_resource(iam.InstanceProfile(
+    'NATInstProfile',
+    Roles = [natIAMRole.Ref()],
+))
+
+natLaunchConfiguration = t.add_resource(autoscaling.LaunchConfiguration(
+    'NATLaunchConfiguration',
+    AssociatePublicIpAddress = 'true',
+    EbsOptimized = 'false',
+    ImageId = FindInMap('NatRegionMap', region, 'AMI'),
+    InstanceType = natInstClass.Ref(),
+    KeyName = keyPair.Ref(),
+    SecurityGroups = [natSG.GetAtt('GroupId'), rdsAccessSG.GetAtt('GroupId')],
+    IamInstanceProfile = natInstProfile.Ref(),
+    UserData = Base64(Sub(
+        """#!/bin/bash
+        yum update -y && yum install -y yum-cron && chkconfig yum-cron on
+        echo 'net.ipv4.ip_forward=1' | sudo tee -a /etc/sysctl.conf
+        sudo sysctl -p
+        sudo iptables -t nat -A POSTROUTING -o eth0 -s ${VPCCidr} -j MASQUERADE
+        sudo /etc/init.d/iptables save
+        export AWS_DEFAULT_REGION='${AWS::Region}'
+        INSTANCEID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+        /usr/bin/aws ec2 modify-instance-attribute --instance-id $INSTANCEID --no-source-dest-check
+        aws --region ${AWS::Region} ec2 replace-route --route-table-id ${RouteTablePrivate} --destination-cidr-block '0.0.0.0/0' --instance-id $INSTANCEID || aws --region ${AWS::Region} ec2 create-route --route-table-id ${RouteTablePrivate} --destination-cidr-block '0.0.0.0/0' --instance-id $INSTANCEID
+        """,
+        {
+            'RouteTablePrivate': routeTable.Ref(),
+            'VPCCidr': vpcCidr,
+        }
+    ))
+))
+
+natAutoScalingGroup = t.add_resource(autoscaling.AutoScalingGroup(
+    'NATAutoScalingGroup',
+    DependsOn = ["SubnetPublic", "NatSecurityGroup"],
+    MaxSize = 1,
+    MinSize = 1,
+    LaunchConfigurationName = natLaunchConfiguration.Ref(),
+    VPCZoneIdentifier = [snPub.Ref()],
+    Tags = [autoscaling.Tag('purpose', 'nat', 'true')],
 ))
 
 # Redis
