@@ -330,6 +330,7 @@ createExport('NewSuccessfulDepositTopic', newSuccessfulDepositTopic.Ref(), Sub('
 createExport('NewSuccessfulWithdrawalTopic', newSuccessfulWithdrawalTopic.Ref(), Sub('${AWS::StackName}-NewSuccessfulWithdrawalTopicArn'))
 createExport('NewTraderExchangeTopic', newTraderExchangeTopic.Ref(), Sub('${AWS::StackName}-NewTraderExchangeTopicArn'))
 createExport('RemoveTraderExchangeTopic', removeTraderExchangeTopic.Ref(), Sub('${AWS::StackName}-RemoveTraderExchangeTopicArn'))
+createExport('NATSecurityGroup', natSG.GetAtt('GroupId'), Sub('${AWS::StackName}-NAT-SG-ID'))
 
 # Save File
 

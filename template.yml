@@ -42,6 +42,10 @@ Outputs:
     Export:
       Name: !Sub '${AWS::StackName}-MySQL-Port'
     Value: !GetAtt 'RDSMySQL.Endpoint.Port'
+  NATSecurityGroup:
+    Export:
+      Name: !Sub '${AWS::StackName}-NAT-SG-ID'
+    Value: !GetAtt 'NatSecurityGroup.GroupId'
   NewFilledOrderTopic:
     Export:
       Name: !Sub '${AWS::StackName}-NewFilledOrderTopicArn'
