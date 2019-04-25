@@ -11,17 +11,16 @@ jobs:
       - checkout
       - aws-cli/install
       - run: |
-        PARAMETERS=$(cat << EOM \n
-        KeyPair=$KEY_PAIR \n
-        NATInstClass=$NAT_INST_CLASS \n
-        NATSSHCidrAllow=$NAT_SSH_CIDR_ALLOW \n
-        RedisInstClass=$REDIS_INST_CLASS \n
-        RedisInstNum=$REDIS_INST_NUM \n
-        RDSStorage=$RDS_STORAGE \n
-        RDSInstClass=$RDS_INST_CLASS \n
-        RDSMasterUser=$RDS_MASTER_USER \n
-        RDSMasterPass=$RDS_MASTER_PASS)
-        aws cloudformation deploy --stack-name $STACK_NAME --no-execute-changeset --capabilities CAPABILITY_IAM --template-file template.yml --parameter-overrides $(cat parameters.properties) | tee workspace/changeset.txt
+        PARAMETERS="KeyPair=$KEY_PAIR "
+        PARAMETERS+="NATInstClass=$NAT_INST_CLASS "
+        PARAMETERS+="NATSSHCidrAllow=$NAT_SSH_CIDR_ALLOW "
+        PARAMETERS+="RedisInstClass=$REDIS_INST_CLASS "
+        PARAMETERS+="RedisInstNum=$REDIS_INST_NUM "
+        PARAMETERS+="RDSStorage=$RDS_STORAGE "
+        PARAMETERS+="RDSInstClass=$RDS_INST_CLASS "
+        PARAMETERS+="RDSMasterUser=$RDS_MASTER_USER "
+        PARAMETERS+="RDSMasterPass=$RDS_MASTER_PASS "
+        aws cloudformation deploy --stack-name $STACK_NAME --no-execute-changeset --capabilities CAPABILITY_IAM --template-file template.yml --parameter-overrides $PARAMETERS | tee workspace/changeset.txt
         CHANGE_SET_NAME=$(grep -o "arn:aws:cloudformation.*" workspace/changeset.txt)
         echo $CHANGE_SET_NAME >> workspace/changesetname.txt
         aws cloudformation describe-change-set --change-set-name $CHANGE_SET_NAME
