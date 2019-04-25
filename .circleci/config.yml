@@ -11,15 +11,15 @@ jobs:
       - checkout
       - aws-cli/install
       - run: |
-        PARAMETERS=$(cat << EOM
-        KeyPair=$KEY_PAIR
-        NATInstClass=$NAT_INST_CLASS
-        NATSSHCidrAllow=$NAT_SSH_CIDR_ALLOW
-        RedisInstClass=$REDIS_INST_CLASS
-        RedisInstNum=$REDIS_INST_NUM
-        RDSStorage=$RDS_STORAGE
-        RDSInstClass=$RDS_INST_CLASS
-        RDSMasterUser=$RDS_MASTER_USER
+        PARAMETERS=$(cat << EOM \n
+        KeyPair=$KEY_PAIR \n
+        NATInstClass=$NAT_INST_CLASS \n
+        NATSSHCidrAllow=$NAT_SSH_CIDR_ALLOW \n
+        RedisInstClass=$REDIS_INST_CLASS \n
+        RedisInstNum=$REDIS_INST_NUM \n
+        RDSStorage=$RDS_STORAGE \n
+        RDSInstClass=$RDS_INST_CLASS \n
+        RDSMasterUser=$RDS_MASTER_USER \n
         RDSMasterPass=$RDS_MASTER_PASS)
         aws cloudformation deploy --stack-name $STACK_NAME --no-execute-changeset --capabilities CAPABILITY_IAM --template-file template.yml --parameter-overrides $(cat parameters.properties) | tee workspace/changeset.txt
         CHANGE_SET_NAME=$(grep -o "arn:aws:cloudformation.*" workspace/changeset.txt)
