@@ -11,19 +11,19 @@ jobs:
       - checkout
       - aws-cli/install
       - run: |
-        PARAMETERS="KeyPair=$KEY_PAIR "
-        PARAMETERS+="NATInstClass=$NAT_INST_CLASS "
-        PARAMETERS+="NATSSHCidrAllow=$NAT_SSH_CIDR_ALLOW "
-        PARAMETERS+="RedisInstClass=$REDIS_INST_CLASS "
-        PARAMETERS+="RedisInstNum=$REDIS_INST_NUM "
-        PARAMETERS+="RDSStorage=$RDS_STORAGE "
-        PARAMETERS+="RDSInstClass=$RDS_INST_CLASS "
-        PARAMETERS+="RDSMasterUser=$RDS_MASTER_USER "
-        PARAMETERS+="RDSMasterPass=$RDS_MASTER_PASS "
-        aws cloudformation deploy --stack-name $STACK_NAME --no-execute-changeset --capabilities CAPABILITY_IAM --template-file template.yml --parameter-overrides $PARAMETERS | tee workspace/changeset.txt
-        CHANGE_SET_NAME=$(grep -o "arn:aws:cloudformation.*" workspace/changeset.txt)
-        echo $CHANGE_SET_NAME >> workspace/changesetname.txt
-        aws cloudformation describe-change-set --change-set-name $CHANGE_SET_NAME
+          PARAMETERS="KeyPair=$KEY_PAIR "
+          PARAMETERS+="NATInstClass=$NAT_INST_CLASS "
+          PARAMETERS+="NATSSHCidrAllow=$NAT_SSH_CIDR_ALLOW "
+          PARAMETERS+="RedisInstClass=$REDIS_INST_CLASS "
+          PARAMETERS+="RedisInstNum=$REDIS_INST_NUM "
+          PARAMETERS+="RDSStorage=$RDS_STORAGE "
+          PARAMETERS+="RDSInstClass=$RDS_INST_CLASS "
+          PARAMETERS+="RDSMasterUser=$RDS_MASTER_USER "
+          PARAMETERS+="RDSMasterPass=$RDS_MASTER_PASS "
+          aws cloudformation deploy --stack-name $STACK_NAME --no-execute-changeset --capabilities CAPABILITY_IAM --template-file template.yml --parameter-overrides $PARAMETERS | tee workspace/changeset.txt
+          CHANGE_SET_NAME=$(grep -o "arn:aws:cloudformation.*" workspace/changeset.txt)
+          echo $CHANGE_SET_NAME >> workspace/changesetname.txt
+          aws cloudformation describe-change-set --change-set-name $CHANGE_SET_NAME
       - persist_to_workspace:
           root: workspace
           paths:
@@ -35,8 +35,8 @@ jobs:
       - attach_workspace:
           at: workspace
       - run: |
-        CHANGE_SET_NAME=$(cat workspace/changesetname.txt)
-        aws cloudformation execute-change-set --change-set-name $CHANGE_SET_NAME
+          CHANGE_SET_NAME=$(cat workspace/changesetname.txt)
+          aws cloudformation execute-change-set --change-set-name $CHANGE_SET_NAME
   deleteChangeSet:
     docker:
       - image: circleci/buildpack-deps:jessie
@@ -44,8 +44,8 @@ jobs:
       - attach_workspace:
           at: workspace
       - run: |
-        CHANGE_SET_NAME=$(cat workspace/changesetname.txt)
-        aws cloudformation delete-change-set --change-set-name $CHANGE_SET_NAME
+          CHANGE_SET_NAME=$(cat workspace/changesetname.txt)
+          aws cloudformation delete-change-set --change-set-name $CHANGE_SET_NAME
         
 workflows:
   version: 2.1
