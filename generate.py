@@ -29,7 +29,6 @@ t.add_mapping('NatRegionMap', {
 keyPair = t.add_parameter(Parameter('KeyPair', Type='String'))
 
 natInstClass = t.add_parameter(Parameter('NATInstClass', Type='String'))
-natSSHCidrAllow = t.add_parameter(Parameter('NATSSHCidrAllow', Type='String'))
 
 redisInstClass = t.add_parameter(Parameter('RedisInstClass', Type='String'))
 redisInstNum = t.add_parameter(Parameter('RedisInstNum', Type='Number'))
@@ -188,12 +187,6 @@ natSG = t.add_resource(ec2.SecurityGroup(
             'FromPort': 443,
             'ToPort': 443,
             'CidrIp': vpcCidr,
-        },
-        {
-            'IpProtocol': 'tcp',
-            'FromPort': 22,
-            'ToPort': 22,
-            'CidrIp': natSSHCidrAllow.Ref(),
         }
     ],
 ))

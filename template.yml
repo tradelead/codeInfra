@@ -87,8 +87,6 @@ Parameters:
     Type: String
   NATInstClass:
     Type: String
-  NATSSHCidrAllow:
-    Type: String
   RDSInstClass:
     Type: String
   RDSMasterPass:
@@ -204,10 +202,6 @@ Resources:
           FromPort: 443
           IpProtocol: tcp
           ToPort: 443
-        - CidrIp: !Ref 'NATSSHCidrAllow'
-          FromPort: 22
-          IpProtocol: tcp
-          ToPort: 22
       VpcId: !Ref 'VPC'
     Type: AWS::EC2::SecurityGroup
   NewFilledOrderTopic:
