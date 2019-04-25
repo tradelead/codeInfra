@@ -1,0 +1,77 @@
+version: 2.1
+
+orbs:
+  aws-cli: circleci/aws-cli@0.1.13
+
+jobs:
+  createChangeSet:
+    docker:
+      - image: circleci/buildpack-deps:jessie
+    steps:
+      - checkout
+      - aws-cli/install
+      - run: |
+        PARAMETERS=$(cat << EOM
+        KeyPair=$KEY_PAIR
+        NATInstClass=$NAT_INST_CLASS
+        NATSSHCidrAllow=$NAT_SSH_CIDR_ALLOW
+        RedisInstClass=$REDIS_INST_CLASS
+        RedisInstNum=$REDIS_INST_NUM
+        RDSStorage=$RDS_STORAGE
+        RDSInstClass=$RDS_INST_CLASS
+        RDSMasterUser=$RDS_MASTER_USER
+        RDSMasterPass=$RDS_MASTER_PASS)
+        aws cloudformation deploy --stack-name $STACK_NAME --no-execute-changeset --capabilities CAPABILITY_IAM --template-file template.yml --parameter-overrides $(cat parameters.properties) | tee workspace/changeset.txt
+        CHANGE_SET_NAME=$(grep -o "arn:aws:cloudformation.*" workspace/changeset.txt)
+        echo $CHANGE_SET_NAME >> workspace/changesetname.txt
+        aws cloudformation describe-change-set --change-set-name $CHANGE_SET_NAME
+      - persist_to_workspace:
+          root: workspace
+          paths:
+            - changesetname.txt
+  executeChangeSet:
+    docker:
+      - image: circleci/buildpack-deps:jessie
+    steps:
+      - attach_workspace:
+          at: workspace
+      - run: |
+        CHANGE_SET_NAME=$(cat workspace/changesetname.txt)
+        aws cloudformation execute-change-set --change-set-name $CHANGE_SET_NAME
+  deleteChangeSet:
+    docker:
+      - image: circleci/buildpack-deps:jessie
+    steps:
+      - attach_workspace:
+          at: workspace
+      - run: |
+        CHANGE_SET_NAME=$(cat workspace/changesetname.txt)
+        aws cloudformation delete-change-set --change-set-name $CHANGE_SET_NAME
+        
+workflows:
+  version: 2.1
+  changeset_review_execute:
+    jobs:
+      - createChangeSet
+      - reviewChangeSet:
+          type: approval
+          requires:
+            - createChangeSet
+          filters:
+            branches:
+              only:
+                - master
+      - executeChangeSet
+          requires:
+            - reviewChangeSet
+          filters:
+            branches:
+              only:
+                - master
+      - deleteChangeSet
+          requires:
+            - createChangeSet
+          filters:
+            branches:
+              ignore:
+                - master
