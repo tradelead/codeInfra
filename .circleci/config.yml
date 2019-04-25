@@ -39,6 +39,9 @@ jobs:
       - attach_workspace:
           at: workspace
       - run: |
+          sudo apt-get install python-dev
+      - aws-cli/install
+      - run: |
           CHANGE_SET_NAME=$(cat workspace/changesetname.txt)
           aws cloudformation execute-change-set --change-set-name $CHANGE_SET_NAME
   deleteChangeSet:
@@ -48,11 +51,13 @@ jobs:
       - attach_workspace:
           at: workspace
       - run: |
+          sudo apt-get install python-dev
+      - aws-cli/install
+      - run: |
           CHANGE_SET_NAME=$(cat workspace/changesetname.txt)
           aws cloudformation delete-change-set --change-set-name $CHANGE_SET_NAME
         
 workflows:
-  version: 2.1
   changeset_review_execute:
     jobs:
       - createChangeSet
