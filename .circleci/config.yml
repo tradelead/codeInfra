@@ -27,7 +27,7 @@ jobs:
           aws cloudformation deploy --stack-name $STACK_NAME --no-execute-changeset --capabilities CAPABILITY_IAM --template-file template.yml --parameter-overrides $PARAMETERS | tee workspace/changeset.txt
           CHANGE_SET_NAME=$(grep -o "arn:aws:cloudformation.*" workspace/changeset.txt)
           echo $CHANGE_SET_NAME >> workspace/changesetname.txt
-          aws cloudformation describe-change-set --change-set-name $CHANGE_SET_NAME
+          echo $CHANGE_SET_NAME
       - persist_to_workspace:
           root: workspace
           paths:
