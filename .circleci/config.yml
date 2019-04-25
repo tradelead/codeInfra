@@ -60,14 +60,14 @@ workflows:
             branches:
               only:
                 - master
-      - executeChangeSet
+      - executeChangeSet:
           requires:
             - reviewChangeSet
           filters:
             branches:
               only:
                 - master
-      - deleteChangeSet
+      - deleteChangeSet:
           requires:
             - createChangeSet
           filters:
