@@ -1,0 +1,26 @@
+{
+  "name": "coreinfra",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tradelead/codeInfra.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/tradelead/codeInfra/issues"
+  },
+  "homepage": "https://github.com/tradelead/codeInfra#readme",
+  "dependencies": {
+    "aws-sdk": "^2.446.0",
+    "minimist": "^1.2.0"
+  },
+  "bin": {
+    "tl-infra": "./cli/cli.js"
+  }
+}
