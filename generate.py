@@ -1,6 +1,6 @@
 from troposphere import Tags, ImportValue, Parameter, Sub, GetAtt, Ref, Join, FindInMap, Base64, Output, Export
 from troposphere import Template, AWSObject
-from troposphere import ec2, rds, sns, elasticache, autoscaling, iam
+from troposphere import ec2, rds, sns, elasticache, autoscaling, iam, ecs
 
 t = Template()
 t.add_version('2010-09-09')
@@ -226,6 +226,8 @@ natInstProfile = t.add_resource(iam.InstanceProfile(
     Roles = [natIAMRole.Ref()],
 ))
 
+ecsCluster = t.add_resource(ecs.Cluster('AppServicesCluster'))
+
 natLaunchConfiguration = t.add_resource(autoscaling.LaunchConfiguration(
     'NATLaunchConfiguration',
     AssociatePublicIpAddress = 'true',
@@ -246,10 +248,24 @@ natLaunchConfiguration = t.add_resource(autoscaling.LaunchConfiguration(
         INSTANCEID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
         /usr/bin/aws ec2 modify-instance-attribute --instance-id $INSTANCEID --no-source-dest-check
         aws --region ${AWS::Region} ec2 replace-route --route-table-id ${RouteTablePrivate} --destination-cidr-block '0.0.0.0/0' --instance-id $INSTANCEID || aws --region ${AWS::Region} ec2 create-route --route-table-id ${RouteTablePrivate} --destination-cidr-block '0.0.0.0/0' --instance-id $INSTANCEID
+        sudo mkdir -p /etc/ecs && sudo touch /etc/ecs/ecs.config
+
+        sudo bash -c "echo ECS_DATADIR=/data >> /etc/ecs/ecs.config"
+        sudo bash -c "echo ECS_ENABLE_TASK_IAM_ROLE=true >> /etc/ecs/ecs.config"
+        sudo bash -c "echo ECS_ENABLE_TASK_IAM_ROLE_NETWORK_HOST=true >> /etc/ecs/ecs.config"
+        sudo bash -c "echo ECS_LOGFILE=/log/ecs-agent.log >> /etc/ecs/ecs.config"
+        sudo bash -c "echo ECS_AVAILABLE_LOGGING_DRIVERS=["json-file","awslogs"] >> /etc/ecs/ecs.config"
+        sudo bash -c "echo ECS_LOGLEVEL=info >> /etc/ecs/ecs.config"
+        sudo bash -c "echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config"
+
+        sudo yum install -y ecs-init
+        sudo service docker start
+        sudo start ecs
         """,
         {
             'RouteTablePrivate': routeTable.Ref(),
             'VPCCidr': vpcCidr,
+            'ECSCluster': ecsCluster.Ref(),
         }
     ))
 ))
@@ -331,6 +347,7 @@ createExport('NewSuccessfulWithdrawalTopic', newSuccessfulWithdrawalTopic.Ref(),
 createExport('NewTraderExchangeTopic', newTraderExchangeTopic.Ref(), Sub('${AWS::StackName}-NewTraderExchangeTopicArn'))
 createExport('RemoveTraderExchangeTopic', removeTraderExchangeTopic.Ref(), Sub('${AWS::StackName}-RemoveTraderExchangeTopicArn'))
 createExport('NATSecurityGroup', natSG.GetAtt('GroupId'), Sub('${AWS::StackName}-NAT-SG-ID'))
+createExport('ECSCluster', ecsCluster.Ref(), Sub('${AWS::StackName}-ECS-Cluster'))
 
 # Save File
 
