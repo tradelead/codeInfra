@@ -203,6 +203,7 @@ natIAMRole = t.add_resource(iam.Role(
             'Action': ['sts:AssumeRole'],
         }]
     },
+    ManagedPolicyArns = ['arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role'],
     Policies = [iam.Policy(
         PolicyName = 'ec2',
         PolicyDocument = {
@@ -254,7 +255,7 @@ natLaunchConfiguration = t.add_resource(autoscaling.LaunchConfiguration(
         sudo bash -c "echo ECS_ENABLE_TASK_IAM_ROLE=true >> /etc/ecs/ecs.config"
         sudo bash -c "echo ECS_ENABLE_TASK_IAM_ROLE_NETWORK_HOST=true >> /etc/ecs/ecs.config"
         sudo bash -c "echo ECS_LOGFILE=/log/ecs-agent.log >> /etc/ecs/ecs.config"
-        sudo bash -c "echo ECS_AVAILABLE_LOGGING_DRIVERS=["json-file","awslogs"] >> /etc/ecs/ecs.config"
+        sudo bash -c 'echo ECS_AVAILABLE_LOGGING_DRIVERS="[\"json-file\",\"awslogs\"]" >> /etc/ecs/ecs.config'
         sudo bash -c "echo ECS_LOGLEVEL=info >> /etc/ecs/ecs.config"
         sudo bash -c "echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config"
 
