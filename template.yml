@@ -1,5 +1,36 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Mappings:
+  ECSRegionMap:
+    ap-northeast-1:
+      AMI: ami-00f839709b07ffb58
+    ap-northeast-2:
+      AMI: ami-0470f8828abe82a87
+    ap-south-1:
+      AMI: ami-0d143ad35f29ad632
+    ap-southeast-1:
+      AMI: ami-0c5b69a05af2f0e23
+    ap-southeast-2:
+      AMI: ami-011ce3fbe73731dfe
+    ca-central-1:
+      AMI: ami-039a05a64b90f63ee
+    eu-central-1:
+      AMI: ami-0ab1db011871746ef
+    eu-west-1:
+      AMI: ami-09cd8db92c6bf3a84
+    eu-west-2:
+      AMI: ami-016a20f0624bae8c5
+    eu-west-3:
+      AMI: ami-0b4b8274f0c0d3bac
+    sa-east-1:
+      AMI: aami-04e333c875fae9d77
+    us-east-1:
+      AMI: ami-0bc08634af113cccb
+    us-east-2:
+      AMI: ami-00cffcd24cb08edf1
+    us-west-1:
+      AMI: ami-05cc68a00d392447a
+    us-west-2:
+      AMI: ami-0054160a688deeb6a
   NatRegionMap:
     ap-northeast-1:
       AMI: ami-06cd52961ce9f0d85
@@ -34,10 +65,22 @@ Mappings:
     us-west-2:
       AMI: ami-0bdb828fd58c52235
 Outputs:
+  ALBWebListener:
+    Export:
+      Name: !Sub '${AWS::StackName}-ALB-Web-Listener'
+    Value: !Ref 'HTTPSListener'
   ECSCluster:
     Export:
       Name: !Sub '${AWS::StackName}-ECS-Cluster'
     Value: !Ref 'AppServicesCluster'
+  LoadBalancer:
+    Export:
+      Name: !Sub '${AWS::StackName}-LoadBalancer'
+    Value: !Ref 'CoreLoadBalancer'
+  LoadBalancerSG:
+    Export:
+      Name: !Sub '${AWS::StackName}-LoadBalancer-SG-ID'
+    Value: !GetAtt 'LoadBalancerSecurityGroup.GroupId'
   MySQLAddress:
     Export:
       Name: !Sub '${AWS::StackName}-MySQL-Address'
@@ -90,7 +133,19 @@ Outputs:
     Export:
       Name: !Sub '${AWS::StackName}-SubnetID'
     Value: !Ref 'SubnetPrivate'
+  VPC:
+    Export:
+      Name: !Sub '${AWS::StackName}-VPC-ID'
+    Value: !Ref 'VPC'
 Parameters:
+  CertificateArn:
+    Type: String
+  ECSInstClass:
+    Type: String
+  ECSInstMax:
+    Type: Number
+  ECSInstMin:
+    Type: Number
   KeyPair:
     Type: String
   NATInstClass:
@@ -110,6 +165,74 @@ Parameters:
 Resources:
   AppServicesCluster:
     Type: AWS::ECS::Cluster
+  CoreLoadBalancer:
+    Properties:
+      SecurityGroups:
+        - !GetAtt 'LoadBalancerSecurityGroup.GroupId'
+      Subnets:
+        - !Ref 'SubnetPrivate'
+        - !Ref 'SubnetPrivateB'
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+  ECSAutoScalingGroup:
+    DependsOn:
+      - SubnetPrivate
+      - ECSSecurityGroup
+    Properties:
+      LaunchConfigurationName: !Ref 'ECSLaunchConfiguration'
+      MaxSize: !Ref 'ECSInstMax'
+      MinSize: !Ref 'ECSInstMin'
+      Tags:
+        - Key: purpose
+          PropagateAtLaunch: 'true'
+          Value: ecsCluster
+      VPCZoneIdentifier:
+        - !Ref 'SubnetPrivate'
+    Type: AWS::AutoScaling::AutoScalingGroup
+  ECSInstProfile:
+    Properties:
+      Roles:
+        - !Ref 'ECSRole'
+    Type: AWS::IAM::InstanceProfile
+  ECSLaunchConfiguration:
+    Properties:
+      AssociatePublicIpAddress: 'true'
+      EbsOptimized: 'false'
+      IamInstanceProfile: !Ref 'ECSInstProfile'
+      ImageId: !FindInMap
+        - ECSRegionMap
+        - !Ref 'AWS::Region'
+        - AMI
+      InstanceType: !Ref 'ECSInstClass'
+      KeyName: !Ref 'KeyPair'
+      SecurityGroups:
+        - !GetAtt 'ECSSecurityGroup.GroupId'
+      UserData: !Base64
+        Fn::Sub:
+          - "#!/bin/bash\n        yum update -y && yum install -y yum-cron && chkconfig\
+            \ yum-cron on\n        sudo bash -c \"echo ECS_CLUSTER=${ECSCluster} >>\
+            \ /etc/ecs/ecs.config\"\n        "
+          - ECSCluster: !Ref 'AppServicesCluster'
+    Type: AWS::AutoScaling::LaunchConfiguration
+  ECSRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+        Version: '2012-10-17'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+    Type: AWS::IAM::Role
+  ECSSecurityGroup:
+    DependsOn: VPC
+    Properties:
+      GroupDescription: ECS Security Group
+      VpcId: !Ref 'VPC'
+    Type: AWS::EC2::SecurityGroup
   GatewayToInternet:
     DependsOn:
       - VPC
@@ -118,8 +241,41 @@ Resources:
       InternetGatewayId: !Ref 'InternetGateway'
       VpcId: !Ref 'VPC'
     Type: AWS::EC2::VPCGatewayAttachment
+  HTTPListener:
+    Properties:
+      Certificates:
+        - CertificateArn: !Ref 'CertificateArn'
+      DefaultActions:
+        - RedirectConfig:
+            Port: '443'
+            Protocol: HTTPS
+            StatusCode: HTTP_301
+          Type: redirect
+      LoadBalancerArn: !Ref 'CoreLoadBalancer'
+      Port: '80'
+      Protocol: HTTP
+    Type: AWS::ElasticLoadBalancingV2::Listener
+  HTTPSListener:
+    Properties:
+      Certificates:
+        - CertificateArn: !Ref 'CertificateArn'
+      DefaultActions:
+        - FixedResponseConfig:
+            ContentType: text/html
+            MessageBody: Not Found
+            StatusCode: '404'
+          Type: fixed-response
+      LoadBalancerArn: !Ref 'CoreLoadBalancer'
+      Port: '443'
+      Protocol: HTTPS
+    Type: AWS::ElasticLoadBalancingV2::Listener
   InternetGateway:
     Type: AWS::EC2::InternetGateway
+  LoadBalancerSecurityGroup:
+    Properties:
+      GroupDescription: Load Balancer SG
+      VpcId: !Ref 'VPC'
+    Type: AWS::EC2::SecurityGroup
   NATAutoScalingGroup:
     DependsOn:
       - SubnetPublic
@@ -167,19 +323,8 @@ Resources:
             \ ${RouteTablePrivate} --destination-cidr-block '0.0.0.0/0' --instance-id\
             \ $INSTANCEID || aws --region ${AWS::Region} ec2 create-route --route-table-id\
             \ ${RouteTablePrivate} --destination-cidr-block '0.0.0.0/0' --instance-id\
-            \ $INSTANCEID\n        sudo mkdir -p /etc/ecs && sudo touch /etc/ecs/ecs.config\n\
-            \n        sudo bash -c \"echo ECS_DATADIR=/data >> /etc/ecs/ecs.config\"\
-            \n        sudo bash -c \"echo ECS_ENABLE_TASK_IAM_ROLE=true >> /etc/ecs/ecs.config\"\
-            \n        sudo bash -c \"echo ECS_ENABLE_TASK_IAM_ROLE_NETWORK_HOST=true\
-            \ >> /etc/ecs/ecs.config\"\n        sudo bash -c \"echo ECS_LOGFILE=/log/ecs-agent.log\
-            \ >> /etc/ecs/ecs.config\"\n        sudo bash -c 'echo ECS_AVAILABLE_LOGGING_DRIVERS=\"\
-            [\"json-file\",\"awslogs\"]\" >> /etc/ecs/ecs.config'\n        sudo bash\
-            \ -c \"echo ECS_LOGLEVEL=info >> /etc/ecs/ecs.config\"\n        sudo bash\
-            \ -c \"echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config\"\n\n   \
-            \     sudo yum install -y ecs-init\n        sudo service docker start\n\
-            \        sudo start ecs\n        "
-          - ECSCluster: !Ref 'AppServicesCluster'
-            RouteTablePrivate: !Ref 'PrivateRouteTable'
+            \ $INSTANCEID\n        "
+          - RouteTablePrivate: !Ref 'PrivateRouteTable'
             VPCCidr: 172.31.0.0/16
     Type: AWS::AutoScaling::LaunchConfiguration
   NATRole:
@@ -193,8 +338,6 @@ Resources:
               Service:
                 - ec2.amazonaws.com
         Version: '2012-10-17'
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
       Policies:
         - PolicyDocument:
             Statement:

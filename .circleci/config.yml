@@ -15,6 +15,10 @@ jobs:
       - run: |
           PARAMETERS="KeyPair=$KEY_PAIR "
           PARAMETERS+="NATInstClass=$NAT_INST_CLASS "
+          PARAMETERS+="ECSInstClass=$ECS_INST_CLASS "
+          PARAMETERS+="ECSInstMin=$ECS_INST_MIN "
+          PARAMETERS+="ECSInstMax=$ECS_INST_MAX "
+          PARAMETERS+="CertificateArn=$CERTIFICATE_ARN "
           PARAMETERS+="NATSSHCidrAllow=$NAT_SSH_CIDR_ALLOW "
           PARAMETERS+="RedisInstClass=$REDIS_INST_CLASS "
           PARAMETERS+="RedisInstNum=$REDIS_INST_NUM "

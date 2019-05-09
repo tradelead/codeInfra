@@ -1,6 +1,6 @@
 from troposphere import Tags, ImportValue, Parameter, Sub, GetAtt, Ref, Join, FindInMap, Base64, Output, Export
 from troposphere import Template, AWSObject
-from troposphere import ec2, rds, sns, elasticache, autoscaling, iam, ecs
+from troposphere import ec2, rds, sns, elasticache, autoscaling, iam, ecs, elasticloadbalancingv2
 
 t = Template()
 t.add_version('2010-09-09')
@@ -24,11 +24,32 @@ t.add_mapping('NatRegionMap', {
     "cn-north-1": {"AMI": "ami-0a4eaf6c4454eda75"},
 })
 
+t.add_mapping('ECSRegionMap', {
+    "us-east-1": {"AMI": "ami-0bc08634af113cccb"},
+    "us-east-2": {"AMI": "ami-00cffcd24cb08edf1"},
+    "us-west-1": {"AMI": "ami-05cc68a00d392447a"},
+    "us-west-2": {"AMI": "ami-0054160a688deeb6a"},
+    "ca-central-1": {"AMI": "ami-039a05a64b90f63ee"},
+    "eu-west-1": {"AMI": "ami-09cd8db92c6bf3a84"},
+    "eu-west-2": {"AMI": "ami-016a20f0624bae8c5"},
+    "eu-west-3": {"AMI": "ami-0b4b8274f0c0d3bac"},
+    "eu-central-1": {"AMI": "ami-0ab1db011871746ef"},
+    "ap-southeast-1": {"AMI": "ami-0c5b69a05af2f0e23"},
+    "ap-northeast-2": {"AMI": "ami-0470f8828abe82a87"},
+    "ap-northeast-1": {"AMI": "ami-00f839709b07ffb58"},
+    "ap-southeast-2": {"AMI": "ami-011ce3fbe73731dfe"},
+    "ap-south-1": {"AMI": "ami-0d143ad35f29ad632"},
+    "sa-east-1": {"AMI": "aami-04e333c875fae9d77"},
+})
+
 # Parameters
 
 keyPair = t.add_parameter(Parameter('KeyPair', Type='String'))
 
 natInstClass = t.add_parameter(Parameter('NATInstClass', Type='String'))
+ecsInstClass = t.add_parameter(Parameter('ECSInstClass', Type='String'))
+ecsInstMin = t.add_parameter(Parameter('ECSInstMin', Type='Number'))
+ecsInstMax = t.add_parameter(Parameter('ECSInstMax', Type='Number'))
 
 redisInstClass = t.add_parameter(Parameter('RedisInstClass', Type='String'))
 redisInstNum = t.add_parameter(Parameter('RedisInstNum', Type='Number'))
@@ -37,6 +58,8 @@ rdsStorage = t.add_parameter(Parameter('RDSStorage', Type='String'))
 rdsInstClass = t.add_parameter(Parameter('RDSInstClass', Type='String'))
 rdsMasterUser = t.add_parameter(Parameter('RDSMasterUser', Type='String'))
 rdsMasterPass = t.add_parameter(Parameter('RDSMasterPass', Type='String'))
+
+t.add_parameter(Parameter('CertificateArn', Type='String'))
 
 # Vars
 
@@ -203,7 +226,6 @@ natIAMRole = t.add_resource(iam.Role(
             'Action': ['sts:AssumeRole'],
         }]
     },
-    ManagedPolicyArns = ['arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role'],
     Policies = [iam.Policy(
         PolicyName = 'ec2',
         PolicyDocument = {
@@ -227,8 +249,6 @@ natInstProfile = t.add_resource(iam.InstanceProfile(
     Roles = [natIAMRole.Ref()],
 ))
 
-ecsCluster = t.add_resource(ecs.Cluster('AppServicesCluster'))
-
 natLaunchConfiguration = t.add_resource(autoscaling.LaunchConfiguration(
     'NATLaunchConfiguration',
     AssociatePublicIpAddress = 'true',
@@ -249,24 +269,10 @@ natLaunchConfiguration = t.add_resource(autoscaling.LaunchConfiguration(
         INSTANCEID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
         /usr/bin/aws ec2 modify-instance-attribute --instance-id $INSTANCEID --no-source-dest-check
         aws --region ${AWS::Region} ec2 replace-route --route-table-id ${RouteTablePrivate} --destination-cidr-block '0.0.0.0/0' --instance-id $INSTANCEID || aws --region ${AWS::Region} ec2 create-route --route-table-id ${RouteTablePrivate} --destination-cidr-block '0.0.0.0/0' --instance-id $INSTANCEID
-        sudo mkdir -p /etc/ecs && sudo touch /etc/ecs/ecs.config
-
-        sudo bash -c "echo ECS_DATADIR=/data >> /etc/ecs/ecs.config"
-        sudo bash -c "echo ECS_ENABLE_TASK_IAM_ROLE=true >> /etc/ecs/ecs.config"
-        sudo bash -c "echo ECS_ENABLE_TASK_IAM_ROLE_NETWORK_HOST=true >> /etc/ecs/ecs.config"
-        sudo bash -c "echo ECS_LOGFILE=/log/ecs-agent.log >> /etc/ecs/ecs.config"
-        sudo bash -c 'echo ECS_AVAILABLE_LOGGING_DRIVERS="[\"json-file\",\"awslogs\"]" >> /etc/ecs/ecs.config'
-        sudo bash -c "echo ECS_LOGLEVEL=info >> /etc/ecs/ecs.config"
-        sudo bash -c "echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config"
-
-        sudo yum install -y ecs-init
-        sudo service docker start
-        sudo start ecs
         """,
         {
             'RouteTablePrivate': routeTable.Ref(),
             'VPCCidr': vpcCidr,
-            'ECSCluster': ecsCluster.Ref(),
         }
     ))
 ))
@@ -279,6 +285,67 @@ natAutoScalingGroup = t.add_resource(autoscaling.AutoScalingGroup(
     LaunchConfigurationName = natLaunchConfiguration.Ref(),
     VPCZoneIdentifier = [snPub.Ref()],
     Tags = [autoscaling.Tag('purpose', 'nat', 'true')],
+))
+
+# Setup ECS Cluster
+
+ecsCluster = t.add_resource(ecs.Cluster('AppServicesCluster'))
+
+ecsSG = t.add_resource(ec2.SecurityGroup(
+    'ECSSecurityGroup',
+    GroupDescription = 'ECS Security Group',
+    DependsOn = 'VPC',
+    VpcId = vpc.Ref(),
+))
+
+ecsIAMRole = t.add_resource(iam.Role(
+    'ECSRole',
+    AssumeRolePolicyDocument = {
+        'Version': '2012-10-17',
+        'Statement': [{
+            'Effect': 'Allow',
+            'Principal': {
+                'Service': ['ec2.amazonaws.com']
+            },
+            'Action': ['sts:AssumeRole'],
+        }]
+    },
+    ManagedPolicyArns = ['arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role'],
+))
+
+ecsInstProfile = t.add_resource(iam.InstanceProfile(
+    'ECSInstProfile',
+    Roles = [ecsIAMRole.Ref()],
+))
+
+ecsLaunchConfiguration = t.add_resource(autoscaling.LaunchConfiguration(
+    'ECSLaunchConfiguration',
+    AssociatePublicIpAddress = 'true',
+    EbsOptimized = 'false',
+    ImageId = FindInMap('ECSRegionMap', region, 'AMI'),
+    InstanceType = ecsInstClass.Ref(),
+    KeyName = keyPair.Ref(),
+    SecurityGroups = [ecsSG.GetAtt('GroupId')],
+    IamInstanceProfile = ecsInstProfile.Ref(),
+    UserData = Base64(Sub(
+        """#!/bin/bash
+        yum update -y && yum install -y yum-cron && chkconfig yum-cron on
+        sudo bash -c "echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config"
+        """,
+        {
+            'ECSCluster': ecsCluster.Ref(),
+        }
+    ))
+))
+
+ecsAutoScalingGroup = t.add_resource(autoscaling.AutoScalingGroup(
+    'ECSAutoScalingGroup',
+    DependsOn = ["SubnetPrivate", "ECSSecurityGroup"],
+    MaxSize = ecsInstMax.Ref(),
+    MinSize = ecsInstMin.Ref(),
+    LaunchConfigurationName = ecsLaunchConfiguration.Ref(),
+    VPCZoneIdentifier = [sn.Ref()],
+    Tags = [autoscaling.Tag('purpose', 'ecsCluster', 'true')],
 ))
 
 # Redis
@@ -326,6 +393,56 @@ newSuccessfulWithdrawalTopic = t.add_resource(sns.Topic('NewSuccessfulWithdrawal
 newTraderExchangeTopic = t.add_resource(sns.Topic('NewTraderExchangeTopic'))
 removeTraderExchangeTopic = t.add_resource(sns.Topic('RemoveTraderExchangeTopic'))
 
+# Load Balancer
+
+loadBalancerSG = t.add_resource(ec2.SecurityGroup(
+    'LoadBalancerSecurityGroup', 
+    GroupDescription = 'Load Balancer SG',
+    VpcId = vpc.Ref(),
+))
+
+coreLoadBalancer = t.add_resource(elasticloadbalancingv2.LoadBalancer(
+    'CoreLoadBalancer',
+    SecurityGroups = [loadBalancerSG.GetAtt('GroupId')],
+    Subnets = [sn.Ref(), snB.Ref()],
+))
+
+httpsListener = t.add_resource(elasticloadbalancingv2.Listener(
+    'HTTPSListener',
+    LoadBalancerArn = coreLoadBalancer.Ref(),
+    Port = '443',
+    Protocol = 'HTTPS',
+    DefaultActions = [elasticloadbalancingv2.Action(
+        Type = 'fixed-response',
+        FixedResponseConfig = elasticloadbalancingv2.FixedResponseConfig(
+            StatusCode = '404',
+            ContentType = 'text/html',
+            MessageBody = 'Not Found',
+        ),
+    )],
+    Certificates = [elasticloadbalancingv2.Certificate(
+        CertificateArn = Ref('CertificateArn')
+    )],
+))
+
+httpListener = t.add_resource(elasticloadbalancingv2.Listener(
+    'HTTPListener',
+    LoadBalancerArn = coreLoadBalancer.Ref(),
+    Port = '80',
+    Protocol = 'HTTP',
+    DefaultActions = [elasticloadbalancingv2.Action(
+        Type = 'redirect',
+        RedirectConfig = elasticloadbalancingv2.RedirectConfig(
+            Port = '443',
+            Protocol = 'HTTPS',
+            StatusCode = 'HTTP_301',
+        ),
+    )],
+    Certificates = [elasticloadbalancingv2.Certificate(
+        CertificateArn = Ref('CertificateArn')
+    )],
+))
+
 # Outputs
 
 def createExport(name, value, exportName):
@@ -335,6 +452,7 @@ def createExport(name, value, exportName):
         Export = Export(exportName)
     ))
 
+createExport('VPC', vpc.Ref(), Sub('${AWS::StackName}-VPC-ID'))
 createExport('Subnet', sn.Ref(), Sub('${AWS::StackName}-SubnetID'))
 createExport('RDSAccessSG', rdsAccessSG.GetAtt('GroupId'), Sub('${AWS::StackName}-RDS-Access-SG-ID'))
 createExport('MySQLPort', mysql.GetAtt('Endpoint.Port'), Sub('${AWS::StackName}-MySQL-Port'))
@@ -349,6 +467,9 @@ createExport('NewTraderExchangeTopic', newTraderExchangeTopic.Ref(), Sub('${AWS:
 createExport('RemoveTraderExchangeTopic', removeTraderExchangeTopic.Ref(), Sub('${AWS::StackName}-RemoveTraderExchangeTopicArn'))
 createExport('NATSecurityGroup', natSG.GetAtt('GroupId'), Sub('${AWS::StackName}-NAT-SG-ID'))
 createExport('ECSCluster', ecsCluster.Ref(), Sub('${AWS::StackName}-ECS-Cluster'))
+createExport('LoadBalancer', coreLoadBalancer.Ref(), Sub('${AWS::StackName}-LoadBalancer'))
+createExport('LoadBalancerSG', loadBalancerSG.GetAtt('GroupId'), Sub('${AWS::StackName}-LoadBalancer-SG-ID'))
+createExport('ALBWebListener', httpsListener.Ref(), Sub('${AWS::StackName}-ALB-Web-Listener'))
 
 # Save File
 
