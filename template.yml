@@ -272,6 +272,15 @@ Resources:
   LoadBalancerSecurityGroup:
     Properties:
       GroupDescription: Load Balancer SG
+      SecurityGroupIngress:
+        - CidrIp: '0.0.0.0/0'
+          FromPort: 80
+          IpProtocol: tcp
+          ToPort: 80
+        - CidrIp: '0.0.0.0/0'
+          FromPort: 443
+          IpProtocol: tcp
+          ToPort: 443
       VpcId: !Ref 'VPC'
     Type: AWS::EC2::SecurityGroup
   NATAutoScalingGroup:

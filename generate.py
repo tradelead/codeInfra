@@ -399,6 +399,18 @@ loadBalancerSG = t.add_resource(ec2.SecurityGroup(
     'LoadBalancerSecurityGroup', 
     GroupDescription = 'Load Balancer SG',
     VpcId = vpc.Ref(),
+    SecurityGroupIngress = [{
+        'IpProtocol': 'tcp',
+        'FromPort': 80,
+        'ToPort': 80,
+        'CidrIp': '0.0.0.0/0',
+    },
+    {
+        'IpProtocol': 'tcp',
+        'FromPort': 443,
+        'ToPort': 443,
+        'CidrIp': '0.0.0.0/0',
+    }],
 ))
 
 coreLoadBalancer = t.add_resource(elasticloadbalancingv2.LoadBalancer(
