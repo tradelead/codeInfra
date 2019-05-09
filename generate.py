@@ -324,7 +324,6 @@ ecsLaunchConfiguration = t.add_resource(autoscaling.LaunchConfiguration(
     EbsOptimized = 'false',
     ImageId = FindInMap('ECSRegionMap', region, 'AMI'),
     InstanceType = ecsInstClass.Ref(),
-    KeyName = keyPair.Ref(),
     SecurityGroups = [ecsSG.GetAtt('GroupId')],
     IamInstanceProfile = ecsInstProfile.Ref(),
     UserData = Base64(Sub(

@@ -203,7 +203,6 @@ Resources:
         - !Ref 'AWS::Region'
         - AMI
       InstanceType: !Ref 'ECSInstClass'
-      KeyName: !Ref 'KeyPair'
       SecurityGroups:
         - !GetAtt 'ECSSecurityGroup.GroupId'
       UserData: !Base64
