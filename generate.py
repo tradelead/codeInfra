@@ -438,9 +438,6 @@ httpListener = t.add_resource(elasticloadbalancingv2.Listener(
             StatusCode = 'HTTP_301',
         ),
     )],
-    Certificates = [elasticloadbalancingv2.Certificate(
-        CertificateArn = Ref('CertificateArn')
-    )],
 ))
 
 # Outputs

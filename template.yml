@@ -243,8 +243,6 @@ Resources:
     Type: AWS::EC2::VPCGatewayAttachment
   HTTPListener:
     Properties:
-      Certificates:
-        - CertificateArn: !Ref 'CertificateArn'
       DefaultActions:
         - RedirectConfig:
             Port: '443'
