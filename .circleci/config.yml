@@ -48,7 +48,6 @@ jobs:
       - run: |
           CHANGE_SET_NAME=$(cat workspace/changesetname.txt)
           aws cloudformation execute-change-set --change-set-name $CHANGE_SET_NAME
-          aws cloudformation wait stack-update-complete --stack-name $STACK_NAME
   deleteChangeSet:
     docker:
       - image: circleci/buildpack-deps:jessie

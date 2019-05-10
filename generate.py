@@ -415,7 +415,7 @@ loadBalancerSG = t.add_resource(ec2.SecurityGroup(
 coreLoadBalancer = t.add_resource(elasticloadbalancingv2.LoadBalancer(
     'CoreLoadBalancer',
     SecurityGroups = [loadBalancerSG.GetAtt('GroupId')],
-    Subnets = [sn.Ref(), snB.Ref()],
+    Subnets = [snPub.Ref(), snB.Ref()],
 ))
 
 httpsListener = t.add_resource(elasticloadbalancingv2.Listener(

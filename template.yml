@@ -170,7 +170,7 @@ Resources:
       SecurityGroups:
         - !GetAtt 'LoadBalancerSecurityGroup.GroupId'
       Subnets:
-        - !Ref 'SubnetPrivate'
+        - !Ref 'SubnetPublic'
         - !Ref 'SubnetPrivateB'
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
   ECSAutoScalingGroup:
