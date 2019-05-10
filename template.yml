@@ -171,7 +171,7 @@ Resources:
         - !GetAtt 'LoadBalancerSecurityGroup.GroupId'
       Subnets:
         - !Ref 'SubnetPublic'
-        - !Ref 'SubnetPrivateB'
+        - !Ref 'SubnetPublicB'
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
   ECSAutoScalingGroup:
     DependsOn:
@@ -412,6 +412,29 @@ Resources:
       RouteTableId: !Ref 'PrivateRouteTableB'
       SubnetId: !Ref 'SubnetPrivateB'
     Type: AWS::EC2::SubnetRouteTableAssociation
+  PublicBRoute:
+    DependsOn:
+      - PublicBRouteTable
+      - InternetGateway
+    Properties:
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref 'InternetGateway'
+      RouteTableId: !Ref 'PublicBRouteTable'
+    Type: AWS::EC2::Route
+  PublicBRouteTable:
+    DependsOn:
+      - VPC
+    Properties:
+      VpcId: !Ref 'VPC'
+    Type: AWS::EC2::RouteTable
+  PublicBSubnetRouteTableAssociation:
+    DependsOn:
+      - SubnetPublicB
+      - PublicBRouteTable
+    Properties:
+      RouteTableId: !Ref 'PublicBRouteTable'
+      SubnetId: !Ref 'SubnetPublicB'
+    Type: AWS::EC2::SubnetRouteTableAssociation
   PublicRoute:
     DependsOn:
       - PublicRouteTable
@@ -537,6 +560,15 @@ Resources:
         - - !Ref 'AWS::Region'
           - a
       CidrBlock: 172.31.0.0/20
+      VpcId: !Ref 'VPC'
+    Type: AWS::EC2::Subnet
+  SubnetPublicB:
+    Properties:
+      AvailabilityZone: !Join
+        - ''
+        - - !Ref 'AWS::Region'
+          - b
+      CidrBlock: 172.33.0.0/20
       VpcId: !Ref 'VPC'
     Type: AWS::EC2::Subnet
   VPC:

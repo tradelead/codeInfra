@@ -68,6 +68,7 @@ region = Ref("AWS::Region")
 availZoneA = Join("", [region, 'a'])
 availZoneB = Join("", [region, 'b'])
 pubSnCidr = '172.31.0.0/20'
+pubSnBCidr = '172.33.0.0/20'
 snCidr = '172.31.16.0/20'
 snCidrB = '172.31.32.0/20'
 
@@ -108,6 +109,34 @@ pubSubnetRouteTableAssc = t.add_resource(ec2.SubnetRouteTableAssociation(
     DependsOn = ['SubnetPublic', 'PublicRouteTable'],
     SubnetId = snPub.Ref(),
     RouteTableId = pubRouteTable.Ref(),
+))
+
+snPubB = t.add_resource(ec2.Subnet(
+    'SubnetPublicB',
+    VpcId = vpc.Ref(),
+    AvailabilityZone = availZoneB,
+    CidrBlock = pubSnBCidr,
+))
+
+pubBRouteTable = t.add_resource(ec2.RouteTable(
+    'PublicBRouteTable',
+    DependsOn = ['VPC'],
+    VpcId = vpc.Ref(),
+))
+
+pubBRoute = t.add_resource(ec2.Route(
+    'PublicBRoute',
+    DependsOn = ['PublicBRouteTable', 'InternetGateway'],
+    RouteTableId = pubBRouteTable.Ref(),
+    GatewayId = intGate.Ref(),
+    DestinationCidrBlock = '0.0.0.0/0',
+))
+
+pubBSubnetRouteTableAssc = t.add_resource(ec2.SubnetRouteTableAssociation(
+    'PublicBSubnetRouteTableAssociation',
+    DependsOn = ['SubnetPublicB', 'PublicBRouteTable'],
+    SubnetId = snPubB.Ref(),
+    RouteTableId = pubBRouteTable.Ref(),
 ))
 
 sn = t.add_resource(ec2.Subnet(
@@ -415,7 +444,7 @@ loadBalancerSG = t.add_resource(ec2.SecurityGroup(
 coreLoadBalancer = t.add_resource(elasticloadbalancingv2.LoadBalancer(
     'CoreLoadBalancer',
     SecurityGroups = [loadBalancerSG.GetAtt('GroupId')],
-    Subnets = [snPub.Ref(), snB.Ref()],
+    Subnets = [snPub.Ref(), snPubB.Ref()],
 ))
 
 httpsListener = t.add_resource(elasticloadbalancingv2.Listener(
