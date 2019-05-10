@@ -215,7 +215,7 @@ mysql = t.add_resource(rds.DBInstance(
     VPCSecurityGroups = [rdsSG.GetAtt('GroupId')],
     PubliclyAccessible = 'false',
     Engine = 'mysql',
-    EngineVersion = '8.0',
+    EngineVersion = '5.6',
     AutoMinorVersionUpgrade = 'true',
     AvailabilityZone = availZoneA,
 ))
