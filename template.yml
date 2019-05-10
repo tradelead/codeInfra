@@ -568,7 +568,7 @@ Resources:
         - ''
         - - !Ref 'AWS::Region'
           - b
-      CidrBlock: 172.31.1.0/20
+      CidrBlock: 172.31.48.0/20
       VpcId: !Ref 'VPC'
     Type: AWS::EC2::Subnet
   VPC:

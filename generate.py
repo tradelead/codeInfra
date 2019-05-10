@@ -68,7 +68,7 @@ region = Ref("AWS::Region")
 availZoneA = Join("", [region, 'a'])
 availZoneB = Join("", [region, 'b'])
 pubSnCidr = '172.31.0.0/20'
-pubSnBCidr = '172.31.1.0/20'
+pubSnBCidr = '172.31.48.0/20'
 snCidr = '172.31.16.0/20'
 snCidrB = '172.31.32.0/20'
 
